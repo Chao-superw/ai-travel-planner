@@ -1,0 +1,85 @@
+services:
+  postgres:
+    image: postgres:16.9-alpine
+    environment:
+      POSTGRES_USER: travel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-travel-only}
+      POSTGRES_DB: travel
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U travel -d travel"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  planner:
+    build: .
+    command: ["/app/bin/planner"]
+    environment:
+      PLANNER_ADDR: 0.0.0.0:8889
+      PLANNER_SERVICE_TOKEN: ${PLANNER_SERVICE_TOKEN:?Set PLANNER_SERVICE_TOKEN in .env}
+      BIGMODEL_API_KEY: ${BIGMODEL_API_KEY:-}
+      BIGMODEL_MODEL: ${BIGMODEL_MODEL:-glm-5.3-flash}
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8889"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  travel:
+    build: .
+    command: ["/app/bin/travel"]
+    environment:
+      TRAVEL_ADDR: 0.0.0.0:8888
+      PLANNER_ADDR: planner:8889
+      PLANNER_SERVICE_TOKEN: ${PLANNER_SERVICE_TOKEN:?Set PLANNER_SERVICE_TOKEN in .env}
+      AMAP_API_KEY: ${AMAP_API_KEY:-}
+      AUTH_CODE_HMAC_KEY: ${AUTH_CODE_HMAC_KEY:?Set AUTH_CODE_HMAC_KEY in .env}
+      SMTP_HOST: ${SMTP_HOST:-smtp.qq.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USERNAME: ${SMTP_USERNAME:?Set SMTP_USERNAME in .env}
+      SMTP_AUTH_CODE: ${SMTP_AUTH_CODE:?Set SMTP_AUTH_CODE in .env}
+      MAIL_FROM: ${MAIL_FROM:?Set MAIL_FROM in .env}
+      SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-10}
+      AUTH_CODE_TTL_SECONDS: ${AUTH_CODE_TTL_SECONDS:-600}
+      AUTH_CODE_RESEND_SECONDS: ${AUTH_CODE_RESEND_SECONDS:-60}
+      AUTH_CODE_MAX_ATTEMPTS: ${AUTH_CODE_MAX_ATTEMPTS:-5}
+      AUTH_SEND_EMAIL_HOUR: ${AUTH_SEND_EMAIL_HOUR:-5}
+      AUTH_SEND_IP_HOUR: ${AUTH_SEND_IP_HOUR:-100}
+      AUTH_SEND_GLOBAL_HOUR: ${AUTH_SEND_GLOBAL_HOUR:-500}
+      AUTH_VERIFY_EMAIL_HOUR: ${AUTH_VERIFY_EMAIL_HOUR:-30}
+      AUTH_VERIFY_IP_HOUR: ${AUTH_VERIFY_IP_HOUR:-300}
+      AUTH_VERIFY_GLOBAL_HOUR: ${AUTH_VERIFY_GLOBAL_HOUR:-3000}
+      AUTH_LOGIN_ACCOUNT_QUARTER: ${AUTH_LOGIN_ACCOUNT_QUARTER:-10}
+      AUTH_LOGIN_IP_QUARTER: ${AUTH_LOGIN_IP_QUARTER:-100}
+      AUTH_LOGIN_GLOBAL_QUARTER: ${AUTH_LOGIN_GLOBAL_QUARTER:-1000}
+      DATABASE_URL: postgres://travel:${POSTGRES_PASSWORD:-local-travel-only}@postgres:5432/travel?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+      planner:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8888"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  api:
+    build: .
+    command: ["/app/bin/api"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      API_ADDR: 0.0.0.0:8080
+      TRAVEL_ADDR: travel:8888
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      OPENAPI_PATH: /app/docs/openapi.yaml
+    depends_on:
+      travel:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  postgres_data:

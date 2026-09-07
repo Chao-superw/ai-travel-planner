@@ -1,0 +1,159 @@
+@base = http://127.0.0.1:8080
+@token = replace-with-login-token
+@email = traveler@example.com
+@challengeId = replace-with-register-code-response-challenge-id
+@verificationCode = replace-with-six-digit-code-from-email
+@legacyToken = replace-with-legacy-login-token
+@bindingChallengeId = replace-with-binding-code-response-challenge-id
+@bindingCode = replace-with-six-digit-binding-code-from-email
+@jobId = job-id
+@tripId = trip-id
+
+### 存活与就绪
+GET {{base}}/healthz
+
+###
+GET {{base}}/readyz
+
+### 发送注册验证码（请把 email 换成自己的邮箱；邮件中的验证码不会出现在 API 响应）
+# 200 data: challenge_id / expires_in（剩余秒数）/ retry_after（重发等待秒数）
+# 429 AUTH_RATE_LIMITED: body.retry_after 和 Retry-After 响应头均为秒数
+POST {{base}}/api/v1/auth/register/code
+Content-Type: application/json
+
+{"email":"{{email}}"}
+
+### 验证邮箱并注册（填入上一步 challenge_id 和邮件中的 6 位验证码；201 返回 User，不返回 token）
+POST {{base}}/api/v1/auth/register
+Content-Type: application/json
+
+{"email":"{{email}}","password":"example-password","code":"{{verificationCode}}","challenge_id":"{{challengeId}}"}
+
+### 邮箱密码登录（200 data.token，8 小时有效；密码 8–72 UTF-8 字节）
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"email":"{{email}}","password":"example-password"}
+
+### 旧账号迁移入口（仅尚未绑定邮箱的既有账号；与新注册流程二选一）
+POST {{base}}/api/v1/auth/legacy/login
+Content-Type: application/json
+
+{"username":"existing-legacy-username","password":"existing-legacy-password"}
+
+### 旧账号申请绑定验证码（使用 legacy/login 返回的 token）
+POST {{base}}/api/v1/me/email/code
+Authorization: Bearer {{legacyToken}}
+Content-Type: application/json
+
+{"email":"{{email}}"}
+
+### 旧账号验证并绑定邮箱（沿用原密码、ID、角色、行程和会话；绑定后使用邮箱登录）
+POST {{base}}/api/v1/me/email
+Authorization: Bearer {{legacyToken}}
+Content-Type: application/json
+
+{"email":"{{email}}","code":"{{bindingCode}}","challenge_id":"{{bindingChallengeId}}"}
+
+### 当前用户（email 未绑定时为空字符串，email_verified 为 false；业务请求将返回 403 EMAIL_VERIFICATION_REQUIRED）
+GET {{base}}/api/v1/me
+Authorization: Bearer {{token}}
+
+### 搜索地点
+GET {{base}}/api/v1/places?city=杭州市&keyword=博物馆&page=1&page_size=20
+Authorization: Bearer {{token}}
+
+### 管理员按搜索返回的地点 ID 建档
+POST {{base}}/api/v1/admin/places
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"id":"place-id-from-search","duration_minutes":120,"tags":["文化"],"open_minute":540,"close_minute":1020,"fee_cents":6000,"fee_source":"景点公开票价页","active":true}
+
+### 管理员完整替换可编辑资料；未知值使用 null
+PATCH {{base}}/api/v1/admin/places/place-id-from-search
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"duration_minutes":150,"tags":["文化"],"open_minute":null,"close_minute":null,"fee_cents":null,"fee_source":"","active":true,"version":1}
+
+### 创建规划任务
+POST {{base}}/api/v1/planning-jobs
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Idempotency-Key: planning-request-1
+
+{
+  "constraints": {
+    "city": "杭州市",
+    "start_date": "2026-10-01",
+    "end_date": "2026-10-03",
+    "party_size": 2,
+    "budget_cents": 200000,
+    "budget_scope": "per_person",
+    "interests": ["文化", "美食"],
+    "pace": "balanced",
+    "transport": "transit"
+  }
+}
+
+### 每 2 秒查询任务，直到最终状态；排队和领取后执行各最多 300 秒
+# 异步失败时本请求仍为 HTTP 200，查看 data.status 与 data.error.code/message/status
+GET {{base}}/api/v1/planning-jobs/{{jobId}}
+Authorization: Bearer {{token}}
+
+### 仅 failed 或 interrupted 任务可以重试
+POST {{base}}/api/v1/planning-jobs/{{jobId}}/retries
+Authorization: Bearer {{token}}
+Idempotency-Key: retry-request-1
+
+### 任务成功后查询完整行程
+# constraints.transport 是偏好；按每段 route.mode 渲染实际 walking/transit
+GET {{base}}/api/v1/trips/{{tripId}}
+Authorization: Bearer {{token}}
+
+### 行程摘要列表
+GET {{base}}/api/v1/trips?page=1&page_size=20
+Authorization: Bearer {{token}}
+
+### 手动修改完整可编辑计划；活动 ID 来自当前行程
+PATCH {{base}}/api/v1/trips/{{tripId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Idempotency-Key: manual-edit-request-1
+
+{"expected_version":3,"plan":{"title":"杭州三日","summary":"减少步行","activities":[{"id":"activity-id-from-current-trip","date":"2026-10-02","start_minute":600,"end_minute":720,"kind":"sightseeing","place_id":"place-id-from-current-trip","title":"博物馆","reason":"文化兴趣"}]}}
+
+### 局部重规划；ID 必须替换为当前行程响应里的实际活动 ID
+POST {{base}}/api/v1/trips/{{tripId}}/replanning-jobs
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Idempotency-Key: replan-request-1
+
+{
+  "expected_version": 3,
+  "scope": {
+    "date": "2026-10-02",
+    "start_minute": 540,
+    "end_minute": 1080,
+    "editable_item_ids": ["activity-id-from-current-trip"],
+    "locked_item_ids": []
+  },
+  "instruction": "下午减少步行。"
+}
+
+### 预算汇总
+GET {{base}}/api/v1/trips/{{tripId}}/budget
+Authorization: Bearer {{token}}
+
+### 版本摘要
+GET {{base}}/api/v1/trips/{{tripId}}/versions?page=1&page_size=20
+Authorization: Bearer {{token}}
+
+### 指定历史版本
+GET {{base}}/api/v1/trips/{{tripId}}/versions/1
+Authorization: Bearer {{token}}
+
+### 注销
+POST {{base}}/api/v1/auth/logout
+Authorization: Bearer {{token}}

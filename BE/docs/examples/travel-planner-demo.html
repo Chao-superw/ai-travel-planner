@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>行迹 · AI 旅行行程规划师(UI Demo)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" />
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          // 暖色调强调色，替换 Airbnb 克隆里的 rose 玫红
+          brand: {
+            50: '#FFF4ED', 100: '#FFE6D5', 200: '#FECDAA', 300: '#FDAC74',
+            400: '#FB8B3C', 500: '#F97316', 600: '#EA5A0B', 700: '#C2440C',
+          },
+        },
+        fontFamily: {
+          sans: ['"Noto Sans SC"', 'system-ui', 'sans-serif'],
+          serif: ['"Noto Serif SC"', 'serif'],
+        },
+        maxWidth: { container: '1140px' },
+      },
+    },
+  };
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { overflow-x: hidden; }
+  /* 复刻克隆项目的暖色定制滚动条 */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #FDAC74; border-radius: 25px; }
+  ::-webkit-scrollbar-thumb:hover { background: #F97316; }
+  ::-webkit-scrollbar-track { background: #FFE6D5; border-radius: 25px; }
+  .cat-scroll::-webkit-scrollbar { display: none; }
+  .cat-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+  /* 骨架屏微光 */
+  @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+  .skeleton { background: linear-gradient(90deg,#f3f4f6 25%,#e9ebee 37%,#f3f4f6 63%); background-size: 800px 100%; animation: shimmer 1.4s infinite linear; }
+  .no-scroll { position: fixed; width: 100%; }
+  .card-img { transition: transform .5s ease; }
+  .group:hover .card-img { transform: scale(1.06); }
+</style>
+</head>
+<body class="font-sans text-neutral-800 bg-white">
+
+<!-- ============ 顶部导航(fixed):Logo + 药丸搜索 + 用户菜单 ============ -->
+<header class="fixed top-0 left-0 w-full bg-white z-30" id="header">
+  <nav class="py-3 border-b border-neutral-200">
+    <div class="max-w-container mx-auto px-4 xl:px-0 flex flex-row justify-between items-center gap-3">
+      <!-- Logo -->
+      <a href="#" class="flex items-center gap-2 shrink-0">
+        <span class="w-9 h-9 rounded-xl bg-brand-500 text-white grid place-items-center font-serif text-lg">行</span>
+        <span class="hidden sm:block text-xl font-bold text-brand-600 tracking-tight">行迹 <span class="text-neutral-400 font-normal text-sm">Wandr</span></span>
+      </a>
+
+      <!-- 药丸搜索触发器(点开唤起分步向导) -->
+      <button id="searchPill" type="button"
+        class="border border-neutral-200 w-full md:w-auto py-2 rounded-full shadow-sm hover:shadow-md transition duration-300 cursor-pointer">
+        <div class="flex flex-row justify-between items-center">
+          <small class="text-sm font-bold px-5 text-neutral-700" id="pillCity">任意目的地</small>
+          <small class="hidden sm:block text-sm font-bold px-5 border-x border-neutral-200 flex-1 text-center text-neutral-700" id="pillDate">任意日期</small>
+          <div class="text-sm pl-5 pr-2 text-neutral-600 flex flex-row items-center gap-3">
+            <small class="hidden sm:block font-normal" id="pillGuest">添加人数</small>
+            <span class="p-2 bg-brand-500 rounded-full text-white grid place-items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/></svg>
+            </span>
+          </div>
+        </div>
+      </button>
+
+      <!-- 用户菜单:登录入口 / 登录后为「我的行程」 -->
+      <div class="hidden md:flex items-center gap-2 shrink-0">
+        <button id="myTrips" class="text-sm font-semibold text-neutral-700 hover:text-brand-600 px-3 py-2 rounded-full hover:bg-neutral-50 transition">我的行程</button>
+        <button id="loginBtn" class="flex items-center gap-2 border border-neutral-200 rounded-full py-1.5 pl-3 pr-1.5 hover:shadow-md transition cursor-pointer">
+          <span class="text-sm font-semibold text-neutral-700">登录</span>
+          <span class="w-7 h-7 rounded-full bg-neutral-700 text-white grid place-items-center text-xs">我</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- 第二行:横滑主题分类条(点击=带该偏好快速开始生成) -->
+  <div id="catBar" class="transition-all duration-150">
+    <div class="max-w-container mx-auto px-2 lg:px-3">
+      <div class="cat-scroll flex flex-row gap-6 overflow-x-auto py-3" id="catList"></div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ 主体 ============ -->
+<main class="pt-[132px] pb-24">
+
+  <!-- Hero:暖色种草首屏 -->
+  <section class="max-w-container mx-auto px-4 xl:px-0">
+    <div class="relative rounded-3xl overflow-hidden bg-gradient-to-br from-brand-100 to-brand-50 p-8 md:p-14">
+      <div class="relative z-10 max-w-xl">
+        <span class="inline-block text-xs font-bold text-brand-600 bg-white/70 rounded-full px-3 py-1 mb-4">AI 行程规划 · 一句话生成</span>
+        <h1 class="font-serif text-3xl md:text-5xl font-bold text-neutral-900 leading-tight">
+          说出你想去哪，<br />剩下的交给 <span class="text-brand-600">行迹</span>
+        </h1>
+        <p class="mt-4 text-neutral-600 text-base md:text-lg">
+          目的地、日期、同行人、预算与偏好，AI 结合真实景点与实时公交步行路线，为你生成一份可修改、可分享的行程。
+        </p>
+        <button id="heroStart" class="mt-6 inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white font-bold px-6 py-3 rounded-full shadow-lg shadow-brand-500/30 transition">
+          开始规划我的旅程
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/></svg>
+        </button>
+        <div class="mt-4 flex flex-wrap gap-2 text-xs text-neutral-500">
+          <span>热门：</span>
+          <button class="quick-city underline decoration-brand-300 hover:text-brand-600" data-city="杭州市">杭州 3 天</button>
+          <button class="quick-city underline decoration-brand-300 hover:text-brand-600" data-city="成都市">成都 4 天</button>
+          <button class="quick-city underline decoration-brand-300 hover:text-brand-600" data-city="大理市">大理 5 天</button>
+        </div>
+      </div>
+      <div class="hidden md:block absolute -right-6 -bottom-6 w-[46%] aspect-[4/3] rounded-2xl overflow-hidden shadow-2xl rotate-2">
+        <img alt="西湖黄昏" class="w-full h-full object-cover"
+          src="https://copilot-cn.bytedance.net/api/ide/v1/tool_text_to_image?prompt=%E6%9D%AD%E5%B7%9E%E8%A5%BF%E6%B9%96%E6%96%AD%E6%A1%A5%E9%BB%84%E6%98%8F%EF%BC%8C%E6%9A%96%E8%89%B2%E8%B0%83%E6%97%85%E8%A1%8C%E6%91%84%E5%BD%B1%EF%BC%8C%E6%9F%94%E5%92%8C%E5%85%89%E7%BA%BF%EF%BC%8C%E7%94%B5%E5%BD%B1%E6%84%9F&image_size=landscape_4_3" />
+      </div>
+    </div>
+  </section>
+
+  <!-- 生成中:骨架屏 + stage 文案(模拟异步任务轮询) -->
+  <section id="generating" class="max-w-container mx-auto px-4 xl:px-0 mt-10 hidden">
+    <div class="flex items-center gap-3 mb-5">
+      <span class="w-5 h-5 rounded-full border-2 border-brand-500 border-t-transparent animate-spin"></span>
+      <span class="font-bold text-neutral-800">正在生成行程</span>
+      <span id="stageText" class="text-sm text-brand-600">已排队…</span>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-8" id="skeletonGrid"></div>
+  </section>
+
+  <!-- 结果:生成的行程卡片 -->
+  <section id="tripResult" class="max-w-container mx-auto px-4 xl:px-0 mt-10 hidden">
+    <div class="flex items-end justify-between mb-5">
+      <div>
+        <h2 class="font-serif text-2xl font-bold text-neutral-900" id="resultTitle">杭州 · 文化与美食 3 日行程</h2>
+        <p class="text-sm text-neutral-500 mt-1" id="resultSummary">江南水乡 · 公交优先 · 轻松节奏</p>
+      </div>
+      <button id="viewTimeline" class="text-sm font-bold text-brand-600 hover:underline">查看每日时间线 →</button>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-8" id="resultGrid"></div>
+  </section>
+
+  <!-- 热门模板:运营配置驱动(非内容社区),点击=预填向导并一键生成 -->
+  <section class="max-w-container mx-auto px-4 xl:px-0 mt-14">
+    <h2 class="font-serif text-2xl font-bold text-neutral-900 mb-1">热门线路模板</h2>
+    <p class="text-sm text-neutral-500 mb-6">选一个模板，AI 用真实景点为你生成完整行程</p>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-8" id="feedGrid"></div>
+  </section>
+</main>
+
+<!-- ============ 分步向导 Modal(映射 Airbnb SearchModal:目的地→日期→人数偏好) ============ -->
+<div id="wizard" class="fixed inset-0 z-50 hidden">
+  <div class="absolute inset-0 bg-black/50" id="wizardBackdrop"></div>
+  <div class="relative z-10 h-full w-full flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
+      <!-- header -->
+      <div class="relative flex items-center justify-center p-5 border-b border-neutral-200">
+        <button id="wizardClose" class="absolute left-4 p-1.5 rounded-full hover:bg-neutral-100">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#525252" viewBox="0 0 16 16"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/></svg>
+        </button>
+        <span class="font-bold" id="wizardTitle">规划新行程</span>
+      </div>
+
+      <!-- 进度点 -->
+      <div class="flex items-center justify-center gap-2 pt-4">
+        <span class="step-dot w-8 h-1.5 rounded-full bg-brand-500" data-i="0"></span>
+        <span class="step-dot w-8 h-1.5 rounded-full bg-neutral-200" data-i="1"></span>
+        <span class="step-dot w-8 h-1.5 rounded-full bg-neutral-200" data-i="2"></span>
+      </div>
+
+      <!-- body -->
+      <div class="p-6 overflow-y-auto flex-1">
+        <!-- step 0 目的地 -->
+        <div class="wizard-step" data-step="0">
+          <h3 class="text-2xl font-bold">想去哪座城市？</h3>
+          <p class="text-neutral-500 mt-1 mb-5">支持国内城市，AI 会用真实景点为你规划</p>
+          <input id="inpCity" type="text" placeholder="例如：杭州市"
+            class="w-full border border-neutral-300 rounded-xl px-4 py-3 text-lg focus:border-brand-500 focus:ring-2 focus:ring-brand-200 outline-none" />
+          <div class="flex flex-wrap gap-2 mt-4">
+            <button class="chip-city border border-neutral-300 rounded-full px-4 py-1.5 text-sm hover:border-brand-500 hover:text-brand-600">杭州市</button>
+            <button class="chip-city border border-neutral-300 rounded-full px-4 py-1.5 text-sm hover:border-brand-500 hover:text-brand-600">成都市</button>
+            <button class="chip-city border border-neutral-300 rounded-full px-4 py-1.5 text-sm hover:border-brand-500 hover:text-brand-600">大理市</button>
+            <button class="chip-city border border-neutral-300 rounded-full px-4 py-1.5 text-sm hover:border-brand-500 hover:text-brand-600">重庆市</button>
+            <button class="chip-city border border-neutral-300 rounded-full px-4 py-1.5 text-sm hover:border-brand-500 hover:text-brand-600">厦门市</button>
+          </div>
+        </div>
+
+        <!-- step 1 日期 -->
+        <div class="wizard-step hidden" data-step="1">
+          <h3 class="text-2xl font-bold">什么时候出发？</h3>
+          <p class="text-neutral-500 mt-1 mb-5">选择出行的起止日期</p>
+          <div class="flex gap-3">
+            <label class="flex-1">
+              <span class="block text-sm text-neutral-500 mb-1">出发</span>
+              <input id="inpStart" type="date" class="w-full border border-neutral-300 rounded-xl px-4 py-3 focus:border-brand-500 outline-none" />
+            </label>
+            <label class="flex-1">
+              <span class="block text-sm text-neutral-500 mb-1">返程</span>
+              <input id="inpEnd" type="date" class="w-full border border-neutral-300 rounded-xl px-4 py-3 focus:border-brand-500 outline-none" />
+            </label>
+          </div>
+          <p id="dayHint" class="text-sm text-brand-600 mt-3"></p>
+        </div>
+
+        <!-- step 2 人数 + 偏好 -->
+        <div class="wizard-step hidden" data-step="2">
+          <h3 class="text-2xl font-bold">还有一些偏好</h3>
+          <p class="text-neutral-500 mt-1 mb-5">帮 AI 更懂你的旅行方式</p>
+
+          <!-- 人数计数器 -->
+          <div class="flex items-center justify-between py-3 border-b border-neutral-200">
+            <div><div class="font-semibold">出行人数</div><div class="text-sm text-neutral-500">按人数换算预算与路线</div></div>
+            <div class="flex items-center gap-4">
+              <button class="cnt-btn w-9 h-9 rounded-full border border-neutral-300 grid place-items-center hover:border-neutral-800" data-d="-1">−</button>
+              <span id="guestCount" class="w-6 text-center font-semibold">2</span>
+              <button class="cnt-btn w-9 h-9 rounded-full border border-neutral-300 grid place-items-center hover:border-neutral-800" data-d="1">+</button>
+            </div>
+          </div>
+
+          <!-- 预算 -->
+          <div class="py-4 border-b border-neutral-200">
+            <div class="flex justify-between items-center mb-2">
+              <span class="font-semibold">人均预算</span>
+              <span id="budgetLabel" class="text-brand-600 font-bold">¥2000</span>
+            </div>
+            <input id="inpBudget" type="range" min="500" max="8000" step="100" value="2000" class="w-full accent-brand-500" />
+          </div>
+
+          <!-- 兴趣 -->
+          <div class="py-4 border-b border-neutral-200">
+            <div class="font-semibold mb-3">兴趣（多选）</div>
+            <div class="flex flex-wrap gap-2" id="interestList"></div>
+          </div>
+
+          <!-- 节奏 & 交通 -->
+          <div class="py-4 grid grid-cols-2 gap-6">
+            <div>
+              <div class="font-semibold mb-2">节奏</div>
+              <div class="flex gap-2" id="paceList"></div>
+            </div>
+            <div>
+              <div class="font-semibold mb-2">交通</div>
+              <div class="flex gap-2" id="transportList"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- footer -->
+      <div class="flex items-center gap-4 px-6 py-4 border-t border-neutral-200">
+        <button id="wizardBack" class="px-5 py-3 rounded-lg font-semibold border border-neutral-800 hover:bg-neutral-50 hidden">上一步</button>
+        <button id="wizardNext" class="flex-1 px-5 py-3 rounded-lg font-semibold bg-brand-500 hover:bg-brand-600 text-white transition">下一步</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 时间线抽屉(展示 by_day 与预算摘要) ============ -->
+<div id="timeline" class="fixed inset-0 z-50 hidden">
+  <div class="absolute inset-0 bg-black/50" id="timelineBackdrop"></div>
+  <aside class="absolute right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl flex flex-col">
+    <div class="flex items-center justify-between p-5 border-b border-neutral-200">
+      <span class="font-bold" id="tlTitle">每日时间线</span>
+      <button id="timelineClose" class="p-1.5 rounded-full hover:bg-neutral-100">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#525252" viewBox="0 0 16 16"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/></svg>
+      </button>
+    </div>
+    <div class="p-5 overflow-y-auto flex-1" id="tlBody"></div>
+    <!-- 预算摘要:严格遵守后端约束(有未知项则不展示"未超预算") -->
+    <div class="border-t border-neutral-200 p-5 bg-neutral-50">
+      <div class="flex justify-between text-sm"><span class="text-neutral-500">已知费用合计（全团）</span><span class="font-bold" id="tlKnown">¥1,212.00</span></div>
+      <div class="flex justify-between text-sm mt-1"><span class="text-neutral-500">未知价格项</span><span class="font-bold text-brand-600" id="tlUnknown">9 项</span></div>
+      <p class="text-xs text-neutral-400 mt-2">含未知价格项，暂不判断是否在预算内。金额来自已定位地点的实时查询，不代表出行当日实际价格。</p>
+    </div>
+  </aside>
+</div>
+
+<footer class="border-t border-neutral-200 py-8 text-center text-sm text-neutral-400">
+  行迹 Wandr · AI 旅行行程规划师 · UI Demo（数据为示意，交互流程对齐真实后端异步生成契约）
+</footer>
+
+<script>
+/* ============================================================
+   Mock 数据：字段结构严格对齐后端 openapi 契约
+   金额单位=分；activity.kind / route.mode / stage 与文档一致
+   ============================================================ */
+const CATEGORIES = [
+  {label:'全部', icon:'✨'}, {label:'City Walk', icon:'🚶'}, {label:'美食', icon:'🍜'},
+  {label:'文化', icon:'🏛️'}, {label:'自然', icon:'⛰️'}, {label:'亲子', icon:'🧸'},
+  {label:'小众', icon:'🧭'}, {label:'摄影', icon:'📷'}, {label:'夜生活', icon:'🌃'},
+  {label:'温泉', icon:'♨️'}, {label:'古镇', icon:'🏮'},
+];
+
+const INTERESTS = ['文化','美食','自然','购物','摄影','亲子','历史','夜景'];
+const PACES = [{v:'relaxed',t:'轻松'},{v:'balanced',t:'均衡'},{v:'intense',t:'紧凑'}];
+const TRANSPORTS = [{v:'transit',t:'公交优先'},{v:'walking',t:'步行'}];
+
+const img = (prompt, size='portrait_4_3') =>
+  `https://copilot-cn.bytedance.net/api/ide/v1/tool_text_to_image?prompt=${encodeURIComponent(prompt)}&image_size=${size}`;
+
+// 热门线路模板(运营配置驱动,非内容社区;对应 Airbnb ListingCard:大图+标题+副文+预算参考)
+// 落地时数据来自静态 templates.json / 轻量 CMS,点击=预填向导并触发 AI 生成
+const FEED = [
+  {city:'杭州市', region:'西湖 · 灵隐', theme:'文化 · 美食', days:3, budget:200000, prompt:'杭州西湖断桥远山，暖色黄昏，旅行摄影，柔和光线，高级感'},
+  {city:'成都市', region:'宽窄巷子 · 熊猫', theme:'美食 · 亲子', days:4, budget:260000, prompt:'成都宽窄巷子红灯笼小吃街，暖色调，市井烟火气，旅行摄影'},
+  {city:'大理市', region:'洱海 · 苍山', theme:'自然 · City Walk', days:5, budget:300000, prompt:'大理洱海清晨薄雾，苍山倒影，暖色阳光，旅行摄影，宁静'},
+  {city:'重庆市', region:'洪崖洞 · 长江索道', theme:'夜景 · 摄影', days:3, budget:180000, prompt:'重庆洪崖洞夜景灯光，赛博朋克暖色，山城江景，旅行摄影'},
+  {city:'厦门市', region:'鼓浪屿 · 环岛路', theme:'City Walk · 摄影', days:4, budget:230000, prompt:'厦门鼓浪屿海边红砖老别墅，暖色夕阳，文艺旅行摄影'},
+  {city:'西安市', region:'古城墙 · 回民街', theme:'历史 · 美食', days:4, budget:210000, prompt:'西安古城墙黄昏灯光，唐风古韵，暖色调，旅行摄影'},
+  {city:'苏州市', region:'平江路 · 园林', theme:'古镇 · 文化', days:3, budget:190000, prompt:'苏州平江路水乡小桥流水，暖色灯笼倒影，江南园林，旅行摄影'},
+  {city:'丽江市', region:'古城 · 玉龙雪山', theme:'古镇 · 自然', days:5, budget:320000, prompt:'丽江古城石板路暖色灯笼夜景，远处雪山，旅行摄影'},
+];
+
+// 一份完整的示例行程(对应 GET /trips/{id} 的 plan.activities + routes + by_day)
+const SAMPLE_TRIP = {
+  title:'杭州 · 文化与美食 3 日行程',
+  summary:'江南水乡 · 公交优先 · 轻松节奏',
+  known_total_cents: 121200,
+  unknown_count: 9,
+  by_day: [
+    { date:'2026-10-01', items:[
+      {kind:'attraction', time:'09:00–11:30', title:'西湖 · 断桥残雪', reason:'经典地标，清晨人少适合拍照', fee:6000},
+      {route:true, mode:'transit', summary:'公交 2 站', distance_m:5599, duration_s:2774, fee:200},
+      {kind:'meal', time:'12:00–13:00', title:'楼外楼（孤山路店）', reason:'西湖醋鱼、龙井虾仁', fee:null},
+      {kind:'attraction', time:'14:00–16:30', title:'雷峰塔', reason:'俯瞰西湖全景', fee:8000},
+      {route:true, mode:'walking', summary:'步行', distance_m:4874, duration_s:3899, fee:0},
+      {kind:'attraction', time:'17:00–18:30', title:'南山路 City Walk', reason:'黄昏湖景，美术馆一条街', fee:null},
+    ]},
+    { date:'2026-10-02', items:[
+      {kind:'attraction', time:'09:30–12:00', title:'灵隐寺 · 飞来峰', reason:'千年古刹与石窟造像', fee:9000},
+      {route:true, mode:'transit', summary:'公交 3 站', distance_m:6100, duration_s:2900, fee:400},
+      {kind:'meal', time:'12:30–13:30', title:'知味观（总店）', reason:'杭帮点心老字号', fee:null},
+      {kind:'attraction', time:'14:30–17:00', title:'中国茶叶博物馆', reason:'龙井茶文化，馆内可品茶', fee:null},
+    ]},
+    { date:'2026-10-03', items:[
+      {kind:'attraction', time:'09:00–11:00', title:'京杭大运河 · 拱宸桥', reason:'漕运历史与桥西历史街区', fee:null},
+      {route:true, mode:'transit', summary:'地铁 + 公交', distance_m:7200, duration_s:3100, fee:500},
+      {kind:'meal', time:'12:00–13:00', title:'新丰小吃', reason:'本地人早餐，性价比高', fee:null},
+      {kind:'attraction', time:'14:00–16:00', title:'良渚古城遗址公园', reason:'五千年文明实证，世界遗产', fee:8000},
+    ]},
+  ],
+};
+
+const KIND_META = {
+  attraction: {icon:'📍', color:'bg-brand-100 text-brand-700', label:'景点'},
+  meal:       {icon:'🍽️', color:'bg-amber-100 text-amber-700', label:'餐饮'},
+  hotel:      {icon:'🏨', color:'bg-indigo-100 text-indigo-700', label:'住宿'},
+};
+
+const yuan = cents => '¥' + (cents/100).toLocaleString('zh-CN',{minimumFractionDigits:2, maximumFractionDigits:2});
+const km = m => (m/1000).toFixed(1)+' km';
+const min = s => Math.round(s/60)+' 分钟';
+
+/* ============ 渲染:分类条(点击=带该偏好快速开始生成) ============ */
+const catList = document.getElementById('catList');
+CATEGORIES.forEach((c,i)=>{
+  const el = document.createElement('button');
+  el.className = `cat-item shrink-0 flex flex-col items-center gap-1 pb-2 border-b-2 transition ${i===0?'border-neutral-900 text-neutral-900':'border-transparent text-neutral-500 hover:text-neutral-800 hover:border-neutral-300'}`;
+  el.innerHTML = `<span class="text-xl">${c.icon}</span><span class="text-xs font-semibold whitespace-nowrap">${c.label}</span>`;
+  el.onclick = ()=>{
+    document.querySelectorAll('.cat-item').forEach(x=>x.className='cat-item shrink-0 flex flex-col items-center gap-1 pb-2 border-b-2 border-transparent text-neutral-500 hover:text-neutral-800 hover:border-neutral-300 transition');
+    el.className='cat-item shrink-0 flex flex-col items-center gap-1 pb-2 border-b-2 border-neutral-900 text-neutral-900 transition';
+    // “全部”不带偏好;其它主题=预选该兴趣并打开向导
+    if(i>0){ openWizard('', c.label); }
+  };
+  catList.appendChild(el);
+});
+
+/* 滚动给分类条加阴影(复刻克隆项目行为) */
+const catBar = document.getElementById('catBar');
+window.addEventListener('scroll', ()=>{
+  catBar.className = window.scrollY>0 ? 'transition-all duration-150 shadow-md' : 'transition-all duration-150';
+});
+
+/* ============ 渲染:模板卡片 & 结果卡片 ============ */
+function tripCard(d){
+  return `
+  <div class="group relative cursor-pointer" data-city="${d.city}">
+    <div class="absolute top-3 left-3 z-10">
+      <span class="text-xs font-semibold bg-white/85 backdrop-blur text-brand-600 px-2.5 py-1 rounded-full">一键生成</span>
+    </div>
+    <div class="overflow-hidden rounded-xl aspect-[1/0.95] bg-neutral-100">
+      <img class="card-img w-full h-full object-cover" alt="${d.city}" src="${img(d.prompt)}" loading="lazy" />
+    </div>
+    <div class="mt-2">
+      <div class="font-semibold text-[16px] text-neutral-900">${d.city.replace('市','')} · ${d.region}</div>
+      <div class="text-sm text-neutral-500">${d.theme} · ${d.days} 天</div>
+      <div class="flex items-baseline gap-1 mt-0.5">
+        <span class="font-bold text-neutral-800 text-[14px]">${yuan(d.budget)}</span>
+        <span class="text-sm text-neutral-500 font-light">预算参考 / 人</span>
+      </div>
+    </div>
+  </div>`;
+}
+const feedGrid = document.getElementById('feedGrid');
+feedGrid.innerHTML = FEED.map(tripCard).join('');
+feedGrid.querySelectorAll('[data-city]').forEach(el=>{
+  el.onclick = ()=> openWizard(el.dataset.city);
+});
+
+/* ============ 向导逻辑 ============ */
+const state = { step:0, city:'', start:'', end:'', guests:2, budget:2000, interests:new Set(['文化','美食']), pace:'balanced', transport:'transit' };
+const wizard = document.getElementById('wizard');
+
+// interests / pace / transport chips
+const interestList = document.getElementById('interestList');
+function interestCls(on){ return `chip border rounded-full px-3.5 py-1.5 text-sm transition ${on?'border-brand-500 bg-brand-50 text-brand-600':'border-neutral-300 hover:border-neutral-800'}`; }
+INTERESTS.forEach(t=>{
+  const b=document.createElement('button');
+  b.dataset.interest=t;
+  b.className=interestCls(state.interests.has(t));
+  b.textContent=t;
+  b.onclick=()=>{ state.interests.has(t)?state.interests.delete(t):state.interests.add(t);
+    b.className=interestCls(state.interests.has(t)); };
+  interestList.appendChild(b);
+});
+// 供分类条“快速偏好生成”同步选中态
+function syncInterestChips(){
+  interestList.querySelectorAll('.chip').forEach(b=> b.className=interestCls(state.interests.has(b.dataset.interest)));
+}
+function segControl(container, items, key){
+  const el=document.getElementById(container);
+  items.forEach(it=>{
+    const b=document.createElement('button');
+    const on=state[key]===it.v;
+    b.className=`seg border rounded-lg px-3 py-1.5 text-sm transition ${on?'border-brand-500 bg-brand-50 text-brand-600':'border-neutral-300 hover:border-neutral-800'}`;
+    b.textContent=it.t;
+    b.onclick=()=>{ state[key]=it.v;
+      el.querySelectorAll('.seg').forEach((x,i)=>x.className=`seg border rounded-lg px-3 py-1.5 text-sm transition ${items[i].v===it.v?'border-brand-500 bg-brand-50 text-brand-600':'border-neutral-300 hover:border-neutral-800'}`); };
+    el.appendChild(b);
+  });
+}
+segControl('paceList', PACES, 'pace');
+segControl('transportList', TRANSPORTS, 'transport');
+
+// 人数计数器
+document.querySelectorAll('.cnt-btn').forEach(b=>b.onclick=()=>{
+  state.guests=Math.max(1, state.guests+parseInt(b.dataset.d));
+  document.getElementById('guestCount').textContent=state.guests;
+});
+// 预算
+document.getElementById('inpBudget').oninput=e=>{ state.budget=+e.target.value; document.getElementById('budgetLabel').textContent='¥'+state.budget; };
+// 城市 chips
+document.querySelectorAll('.chip-city').forEach(b=>b.onclick=()=>{ document.getElementById('inpCity').value=b.textContent; state.city=b.textContent; });
+document.getElementById('inpCity').oninput=e=>state.city=e.target.value;
+// 日期提示
+function updateDayHint(){
+  const s=document.getElementById('inpStart').value, e=document.getElementById('inpEnd').value;
+  state.start=s; state.end=e;
+  const hint=document.getElementById('dayHint');
+  if(s&&e){ const d=Math.max(1,Math.round((new Date(e)-new Date(s))/864e5)+1); hint.textContent=`共 ${d} 天行程`; }
+  else hint.textContent='';
+}
+document.getElementById('inpStart').onchange=updateDayHint;
+document.getElementById('inpEnd').onchange=updateDayHint;
+
+function showStep(n){
+  state.step=n;
+  document.querySelectorAll('.wizard-step').forEach(s=>s.classList.toggle('hidden', +s.dataset.step!==n));
+  document.querySelectorAll('.step-dot').forEach(d=>d.className=`step-dot w-8 h-1.5 rounded-full ${+d.dataset.i<=n?'bg-brand-500':'bg-neutral-200'}`);
+  document.getElementById('wizardBack').classList.toggle('hidden', n===0);
+  document.getElementById('wizardNext').textContent = n===2 ? '生成行程' : '下一步';
+}
+function openWizard(city='', interest=''){
+  if(city){ state.city=city; document.getElementById('inpCity').value=city; }
+  // 分类条快速偏好:预选该兴趣并同步 chips
+  if(interest && INTERESTS.includes(interest)){ state.interests.add(interest); syncInterestChips(); }
+  // 预填示例日期
+  if(!state.start){ const t=new Date('2026-10-01'), e=new Date('2026-10-03');
+    document.getElementById('inpStart').value='2026-10-01'; document.getElementById('inpEnd').value='2026-10-03'; updateDayHint(); }
+  showStep(0);
+  wizard.classList.remove('hidden'); document.body.classList.add('no-scroll');
+}
+function closeWizard(){ wizard.classList.add('hidden'); document.body.classList.remove('no-scroll'); }
+
+document.getElementById('heroStart').onclick=()=>openWizard();
+document.getElementById('searchPill').onclick=()=>openWizard();
+document.querySelectorAll('.quick-city').forEach(b=>b.onclick=()=>openWizard(b.dataset.city));
+// 登录 / 我的行程:后端已有鉴权与行程列表接口,demo 用提示占位说明落地去向
+document.getElementById('loginBtn').onclick=()=>alert('邮箱登录 / 注册\n\n此演示尚未接入认证。新用户先获取邮箱验证码，再提交邮箱、密码、验证码和 challenge_id 注册；随后用邮箱密码登录，保存 data.token。旧用户名账号须通过迁移入口登录并绑定邮箱。受保护请求带 Authorization: Bearer <token>。');
+document.getElementById('myTrips').onclick=()=>alert('我的行程\n\n登录后展示：调用行程列表接口（仅摘要），点进详情再取完整行程（活动/路线/预算/版本历史）。这是工具型产品登录后的主界面。');
+document.getElementById('wizardClose').onclick=closeWizard;
+document.getElementById('wizardBackdrop').onclick=closeWizard;
+document.getElementById('wizardBack').onclick=()=>showStep(Math.max(0,state.step-1));
+document.getElementById('wizardNext').onclick=()=>{
+  if(state.step<2){ if(state.step===0 && !state.city.trim()){ document.getElementById('inpCity').focus(); return; } showStep(state.step+1); }
+  else { closeWizard(); startGeneration(); }
+};
+
+/* ============ 模拟异步生成:骨架屏 + stage 轮播(对齐 202 + 轮询语义) ============ */
+function startGeneration(){
+  // 更新顶部药丸回显
+  document.getElementById('pillCity').textContent=state.city||'任意目的地';
+  document.getElementById('pillDate').textContent=(state.start&&state.end)?`${state.start} 至 ${state.end}`:'任意日期';
+  document.getElementById('pillGuest').textContent=`${state.guests} 人`;
+
+  document.getElementById('tripResult').classList.add('hidden');
+  const gen=document.getElementById('generating'); gen.classList.remove('hidden');
+  const grid=document.getElementById('skeletonGrid');
+  grid.innerHTML=Array(8).fill(0).map(()=>`
+    <div><div class="skeleton rounded-xl aspect-[1/0.95]"></div>
+    <div class="skeleton h-4 w-3/4 rounded mt-2"></div>
+    <div class="skeleton h-3 w-1/2 rounded mt-1.5"></div></div>`).join('');
+  gen.scrollIntoView({behavior:'smooth', block:'start'});
+
+  const stages=['已排队…','正在检索真实景点…','正在规划公交与步行路线…','正在核算预算…','即将完成…'];
+  let i=0; const st=document.getElementById('stageText');
+  const timer=setInterval(()=>{ st.textContent=stages[i++]; if(i>=stages.length){ clearInterval(timer); finishGeneration(); } }, 700);
+}
+function finishGeneration(){
+  document.getElementById('generating').classList.add('hidden');
+  const res=document.getElementById('tripResult'); res.classList.remove('hidden');
+  const cityShort=(state.city||'杭州市').replace('市','');
+  const interests=[...state.interests].slice(0,2).join('与')||'精选';
+  document.getElementById('resultTitle').textContent=`${cityShort} · ${interests} ${dayCount()} 日行程`;
+  document.getElementById('resultSummary').textContent=`${state.transport==='transit'?'公交优先':'步行'} · ${PACES.find(p=>p.v===state.pace)?.t||'均衡'}节奏 · ${state.guests} 人`;
+  // 结果卡片:用示例目的地作为每日封面
+  const covers=[
+    {t:`Day 1 · ${cityShort}地标`, p:`${cityShort}城市地标黄昏，暖色调旅行摄影`},
+    {t:`Day 2 · 文化探访`, p:`${cityShort}博物馆古建筑，暖色光线，旅行摄影`},
+    {t:`Day 3 · 美食漫步`, p:`${cityShort}特色美食小吃街，暖色烟火气，旅行摄影`},
+    {t:`预算与路线`, p:`旅行地图与行程规划本，暖色调，俯拍，旅行摄影`},
+  ];
+  document.getElementById('resultGrid').innerHTML=covers.map(c=>`
+    <div class="group cursor-pointer" onclick="openTimeline()">
+      <div class="overflow-hidden rounded-xl aspect-[1/0.95] bg-neutral-100">
+        <img class="card-img w-full h-full object-cover" alt="${c.t}" src="${img(c.p)}" loading="lazy"/>
+      </div>
+      <div class="font-semibold text-[16px] mt-2">${c.t}</div>
+      <div class="text-sm text-neutral-500">点击查看时间线</div>
+    </div>`).join('');
+  res.scrollIntoView({behavior:'smooth', block:'start'});
+}
+function dayCount(){ if(state.start&&state.end){ return Math.max(1,Math.round((new Date(state.end)-new Date(state.start))/864e5)+1);} return 3; }
+document.getElementById('viewTimeline').onclick=openTimeline;
+
+/* ============ 时间线抽屉:渲染 by_day ============ */
+function openTimeline(){
+  const body=document.getElementById('tlBody');
+  document.getElementById('tlTitle').textContent=(state.city||'杭州市').replace('市','')+' · 每日时间线';
+  body.innerHTML=SAMPLE_TRIP.by_day.map((day,di)=>`
+    <div class="mb-6">
+      <div class="sticky top-0 bg-white py-1 font-bold text-brand-600">Day ${di+1} · ${day.date}</div>
+      <div class="mt-2 space-y-2">
+        ${day.items.map(it=> it.route ? routeRow(it) : activityRow(it)).join('')}
+      </div>
+    </div>`).join('');
+  document.getElementById('timeline').classList.remove('hidden'); document.body.classList.add('no-scroll');
+}
+function activityRow(a){
+  const m=KIND_META[a.kind]||KIND_META.attraction;
+  const fee = a.fee==null ? '<span class="text-neutral-400">价格未知</span>' : `<span class="font-semibold text-neutral-700">${yuan(a.fee)}</span>`;
+  return `
+  <div class="flex gap-3 p-3 rounded-xl border border-neutral-200 hover:border-brand-300 transition">
+    <div class="shrink-0 w-9 h-9 rounded-lg grid place-items-center ${m.color}">${m.icon}</div>
+    <div class="flex-1">
+      <div class="flex justify-between items-start">
+        <div class="font-semibold text-neutral-900">${a.title}</div>
+        <span class="text-xs px-2 py-0.5 rounded-full ${m.color}">${m.label}</span>
+      </div>
+      <div class="text-xs text-neutral-500 mt-0.5">${a.time}</div>
+      <div class="text-sm text-neutral-600 mt-1">${a.reason}</div>
+      <div class="text-sm mt-1">${fee}</div>
+    </div>
+  </div>`;
+}
+function routeRow(r){
+  const badge = r.mode==='walking'
+    ? '<span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">🚶 步行</span>'
+    : '<span class="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🚌 公交</span>';
+  const fee = r.fee==null ? '价格未知' : (r.fee===0?'免费':yuan(r.fee));
+  return `
+  <div class="flex items-center gap-3 pl-4 text-sm text-neutral-500">
+    <div class="w-9 grid place-items-center text-neutral-300">┊</div>
+    <div class="flex items-center gap-2 flex-wrap">
+      ${badge}<span>${r.summary}</span>·<span>${km(r.distance_m)}</span>·<span>${min(r.duration_s)}</span>·<span>${fee}</span>
+    </div>
+  </div>`;
+}
+document.getElementById('tlKnown').textContent=yuan(SAMPLE_TRIP.known_total_cents);
+document.getElementById('tlUnknown').textContent=SAMPLE_TRIP.unknown_count+' 项';
+function closeTimeline(){ document.getElementById('timeline').classList.add('hidden'); document.body.classList.remove('no-scroll'); }
+document.getElementById('timelineClose').onclick=closeTimeline;
+document.getElementById('timelineBackdrop').onclick=closeTimeline;
+</script>
+</body>
+</html>

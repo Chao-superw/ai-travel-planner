@@ -1,0 +1,38 @@
+# Runtime configuration; keep only credential-free examples.
+.env
+.env.*
+!.env.example
+
+# Backend runtime data and local executables.
+/BE/.local/
+/BE/bin/
+/FE/.local/
+
+# Private credentials, exports and captured browser traffic.
+# Put raw SQL backups and private screenshots in BE/.local/ or FE/.local/.
+secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+*.dump
+*.sql.gz
+*.har
+
+# Frontend dependencies and build/test outputs.
+node_modules/
+dist/
+dist-ssr/
+coverage/
+*.tsbuildinfo
+
+# Workspace tooling, operating system and editor state.
+/.trae/
+/.sdd-fe/
+/.superpowers/
+/.codex/
+.DS_Store
+.idea/
+__pycache__/
+*.pyc
+*.log

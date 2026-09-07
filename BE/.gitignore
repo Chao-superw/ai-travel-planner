@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+bin/
+.local/
+.superpowers/
+*.log
+.DS_Store
+__pycache__/
+*.pyc

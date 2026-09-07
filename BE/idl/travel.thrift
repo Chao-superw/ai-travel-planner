@@ -1,0 +1,26 @@
+namespace go travel
+include "model.thrift"
+service TravelService {
+  model.Response Register(1: model.Request req)
+  model.Response Login(1: model.Request req)
+  model.Response Logout(1: model.Request req)
+  model.Response GetCurrentUser(1: model.Request req)
+  model.Response SearchPlaces(1: model.Request req)
+  model.Response CreatePlace(1: model.Request req)
+  model.Response UpdatePlace(1: model.Request req)
+  model.Response CreatePlanningJob(1: model.Request req)
+  model.Response GetPlanningJob(1: model.Request req)
+  model.Response RetryPlanningJob(1: model.Request req)
+  model.Response ListTrips(1: model.Request req)
+  model.Response GetTrip(1: model.Request req)
+  model.Response UpdateTrip(1: model.Request req)
+  model.Response CreateReplanningJob(1: model.Request req)
+  model.Response ListTripVersions(1: model.Request req)
+  model.Response GetTripVersion(1: model.Request req)
+  model.Response GetBudgetSummary(1: model.Request req)
+  model.Response Health(1: model.Request req)
+  model.Response RequestRegistrationCode(1: model.Request req)
+  model.Response LegacyLogin(1: model.Request req)
+  model.Response RequestEmailBindingCode(1: model.Request req)
+  model.Response BindEmail(1: model.Request req)
+}
